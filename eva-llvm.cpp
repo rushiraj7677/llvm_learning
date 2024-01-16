@@ -6,7 +6,7 @@ int main(int argc, char const *argv[]){
 	std::string program = R"(
 
     (var x 42)
-    (if (== 42)
+    (if (== x 42)
       (if (> x 42)
         1
         3)

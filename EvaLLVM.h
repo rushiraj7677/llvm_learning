@@ -151,8 +151,8 @@ class EvaLLVM {
             // Then block:
             auto thenBlock = createBB("then", fn);
             // to handle nested if-expressions:
-            auto elseBlock = createBB("else");
-            auto ifEndBlock = createBB("ifend") ;
+            auto elseBlock = createBB("else", fn);
+            auto ifEndBlock = createBB("ifend", fn) ;
             // Condition branch:
             builder->CreateCondBr(cond, thenBlock, elseBlock);
             // Then branch:
@@ -163,19 +163,20 @@ class EvaLLVM {
             thenBlock = builder->GetInsertBlock();
 
             // Else branch:
-            fn->insert(elseBlock);
+            elseBlock->moveAfter(thenBlock);
             builder->SetInsertPoint(elseBlock);
             auto elseRes = gen(exp.list[3], env);
             builder->CreateBr(ifEndBlock);
 
             // If-end block:
-            fn->getBasicBlockList().push_back(ifEndBlock);
+            ifEndBlock->moveAfter(elseBlock);
             builder->SetInsertPoint(ifEndBlock);
             // Result of the if expression is phi:
             auto phi = builder->CreatePHI(builder->getInt32Ty(), 2, "tmpif");
 
             phi->addIncoming(thenRes, thenBlock);
             phi->addIncoming(elseRes, elseBlock);
+
 
             return phi;
             
