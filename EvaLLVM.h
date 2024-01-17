@@ -172,7 +172,7 @@ class EvaLLVM {
             ifEndBlock->moveAfter(elseBlock);
             builder->SetInsertPoint(ifEndBlock);
             // Result of the if expression is phi:
-            auto phi = builder->CreatePHI(builder->getInt32Ty(), 2, "tmpif");
+            auto phi = builder->CreatePHI(thenRes->getType(), 2, "tmpif");
 
             phi->addIncoming(thenRes, thenBlock);
             phi->addIncoming(elseRes, elseBlock);
@@ -181,7 +181,33 @@ class EvaLLVM {
             return phi;
             
           }
+          //---------------------------------------------------------------------
+          //While loop:
+          else if (op == "while") {
+              // Condition:
+              auto condBlock = createBB("cond", fn);
+              builder->CreateBr(condBlock);
 
+              // Body, while-end blocks:
+              auto bodyBlock = createBB("body", fn);
+              auto loopEndBlock = createBB ("loopend", fn);
+
+              // Compile <cond>:
+              builder->SetInsertPoint(condBlock);
+              auto cond = gen(exp.list[1], env);
+
+              // Condition branch:
+              builder->CreateCondBr(cond, bodyBlock, loopEndBlock);
+
+              // Body:
+              bodyBlock->moveAfter(condBlock);            
+              builder->SetInsertPoint(bodyBlock);
+              gen(exp.list[2],env);
+              builder->CreateBr(condBlock);
+              loopEndBlock->moveAfter(bodyBlock);
+              builder->SetInsertPoint(loopEndBlock);
+              return builder->getInt32(0);
+          }
 					// (printf "Value: %d" 42)
 					//
 					if (op == "var"){
