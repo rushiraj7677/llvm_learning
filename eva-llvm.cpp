@@ -23,8 +23,6 @@ int main(int argc, char const *argv[]){
   
     (def square (x) (* x x))
 
-    
-
     (def sum ((a number) (b number)) -> number ( + a b))  
 
     (printf "Value: %d \n" ( + (sum 2 3) (square 2)))
