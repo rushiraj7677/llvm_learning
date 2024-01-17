@@ -93,9 +93,13 @@ class EvaLLVM {
           if (auto localVar = llvm::dyn_cast<llvm::AllocaInst>(value)) {
             return builder->CreateLoad(localVar->getAllocatedType(), localVar, varName.c_str());
           }
-            // 2. Global vars:
+          // 2. Global vars:
           else if (auto globalVar = llvm::dyn_cast<llvm::GlobalVariable>(value)) {
             return builder->CreateLoad (globalVar->getInitializer()->getType(), globalVar, varName.c_str());
+          }
+          // 3.Functions:
+          else{
+           return value;
           }
 				}
 
@@ -208,6 +212,13 @@ class EvaLLVM {
               builder->SetInsertPoint(loopEndBlock);
               return builder->getInt32(0);
           }
+          // ------------------------------------------------------------
+          // Function Declaration: (def <name> <parems> <body>)
+          //
+          else if (op == "def") {
+            return compileFunction(exp, /* name */ exp.list[1].string, env);
+          }
+          
 					// (printf "Value: %d" 42)
 					//
 					if (op == "var"){
@@ -253,13 +264,24 @@ class EvaLLVM {
 						for (auto i = 1; i < exp. list.size(); i++) {
 							args.push_back(gen(exp.list[i],env));
 						}
-
-					return builder->CreateCall(printfFn, args);
+            return builder->CreateCall(printfFn, args);
 					}	
 				
+          else {
+            auto callable = gen(exp.list[0], env); 
+            std::vector<llvm::Value*> args{};
+
+            for(auto i = 1; i < exp.list.size(); i++) {
+              args.push_back(gen(exp.list[i], env));
+            }
+
+            auto fn = (llvm::Function*)callable;
+
+            return builder->CreateCall(fn, args);
+            }  
 				}
 
-			}
+		  }
 			return builder->getInt32(0);
 		}	
 
@@ -286,6 +308,74 @@ class EvaLLVM {
       } 
       // default:
       return builder->getInt32Ty();
+    }
+
+    /**
+    * Whether function has return type defined.
+    */
+    bool hasReturnType(const Exp& fnExp) {
+      return fnExp.list[3].type == ExpType::SYMBOL &&
+            fnExp.list[3].string == "->";
+    }
+    /**
+    * Exp function to LLVM function params.
+    *
+    * (def square ((number x)) -> number ...)
+    *
+    * 1lvm:: FunctionType: :get(returnType, paramTypes, false) ;
+    */
+    llvm::FunctionType* extractFunctionType (const Exp& fnExp) {
+      auto params = fnExp.list[2];
+
+      // Return type:
+      auto returnType = hasReturnType(fnExp)
+                        ? getTypeFromString(fnExp.list[4].string)
+                        : builder->getInt32Ty();
+      // Parameter types:
+      std::vector<llvm::Type*> paramTypes{};
+
+      for (auto& param : params.list) {
+        auto paramTy = extractVarType(param);
+        paramTypes.push_back(paramTy);
+      }
+      return llvm::FunctionType::get(returnType, paramTypes, /* varargs */ false);
+    }    
+    /*  Compile Function.
+        Untyped: (def square (x) (* xx)) - 132 by default
+        Typed: (def square ((× number)) - number (* xx))
+     * */
+    llvm::Value* compileFunction(const Exp& fnExp, std::string fnName, Env env){
+      
+      auto params = fnExp.list[2];
+      auto body = hasReturnType(fnExp) ? fnExp.list[5] : fnExp.list [3];
+
+      // Save current fn:
+      auto prevFn = fn;
+      auto prevBlock = builder->GetInsertBlock();
+
+      // Override fn to compile body:
+      auto newFn = createFunction(fnName, extractFunctionType(fnExp), env);
+      fn = newFn;
+      // Set parameter names:
+      auto idx = 0;
+      // Function environment for params:
+      auto fnEnv = std::make_shared<Environment> (
+      std::map<std::string, llvm::Value*>{}, env);
+      for (auto& arg : fn->args()) {
+        auto param = params.list[idx++];
+        auto argName = extractVarName(param);
+        arg.setName(argName);
+        // Allocate a local variable per argument to make arguments mutable.
+        auto argBinding = allocVar(argName, arg.getType(), fnEnv);
+        builder->CreateStore(&arg, argBinding);
+      }
+      builder->CreateRet(gen(body, fnEnv));
+  
+      // Restore previous fn after compiling.
+      builder->SetInsertPoint(prevBlock);
+      fn = prevFn;
+
+      return newFn;
     }
 
     llvm::Value* allocVar(const std::string& name, llvm::Type* type_, Env env){
